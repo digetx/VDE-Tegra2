@@ -1,6 +1,6 @@
 .*
 *.o
-h264_decode
+h264_tegra_decode
 test.h264
 test.mp4
 Makefile
@@ -8,8 +8,7 @@ Makefile.in
 aclocal.m4
 autom4te.cache/
 compile
-config.log
-config.status
+config.*
 configure
 depcomp
 install-sh

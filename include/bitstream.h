@@ -24,6 +24,7 @@ typedef struct bitstream_reader {
 	const uint8_t *data_ptr;
 	uint32_t bitstream_end;
 	uint32_t data_offset;
+	uint32_t NAL_offset;
 	uint8_t bit_shift;
 	uint8_t rbsp_mode;
 	uint8_t error;

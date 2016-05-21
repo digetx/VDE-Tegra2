@@ -31,6 +31,8 @@
 #define BITSTREAM_DPRINT(...)	{}
 #endif
 
+#define BITSTREAM_IPRINT(f, ...)	printf(f, ## __VA_ARGS__)
+
 #define BITSTREAM_ERR(f, ...)						\
 {									\
 	fprintf(stderr, "%s:%d:\n", __FILE__, __LINE__);		\
@@ -145,7 +147,8 @@ void bitstream_init(bitstream_reader *reader, void *data, uint32_t size)
 static int check_range(bitstream_reader *reader, uint32_t offset)
 {
 	if (reader->data_offset + offset >= reader->bitstream_end) {
-		BITSTREAM_ERR("Reached data stream end\n");
+		BITSTREAM_IPRINT("Reached data stream end\n");
+		exit(0);
 	}
 
 	return 0;
@@ -381,7 +384,7 @@ unsigned bitstream_skip_leading_zeros(bitstream_reader *reader)
 	return 0;
 }
 
-static uint32_t exp_golomb_codenum(uint8_t exp, uint16_t val)
+static uint32_t exp_golomb_codenum(unsigned exp, uint32_t val)
 {
 	uint32_t ret = (1l << exp) - 1 + val;
 
@@ -392,13 +395,14 @@ static uint32_t exp_golomb_codenum(uint8_t exp, uint16_t val)
 
 uint32_t bitstream_read_ue(bitstream_reader *reader)
 {
-	uint8_t leading_zeros;
-	uint16_t val = 0;
+	unsigned leading_zeros;
+	uint32_t val = 0;
 
 	leading_zeros = bitstream_skip_leading_zeros(reader);
 
-	if (leading_zeros > 16) {
-		BITSTREAM_ERR("Exp-golomb parse error\n");
+	if (leading_zeros > 31) {
+		BITSTREAM_ERR("Exp-golomb parse error leading_zeros = %d\n",
+			      leading_zeros);
 	}
 
 	if (leading_zeros) {

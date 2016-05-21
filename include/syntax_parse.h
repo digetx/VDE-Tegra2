@@ -32,41 +32,4 @@ void parse_annex_b(decoder_context *decoder);
 
 int parse_mp4(decoder_context *decoder);
 
-int MbPartPredMode(const macroblock *mb, int slice_type);
-
-signed get_mb_id_left(const decoder_context *decoder, unsigned mb_id);
-
-signed get_mb_id_up(const decoder_context *decoder, unsigned mb_id);
-
-signed get_sub_id_4x4_left(const decoder_context *decoder, macroblock **mb,
-			   unsigned mb_id, unsigned sub_mb_id);
-
-signed get_sub_id_4x4_up(const decoder_context *decoder, macroblock **mb,
-			 unsigned mb_id, unsigned sub_mb_id);
-
-signed get_sub_id_4x4_up_right(const decoder_context *decoder, macroblock **mb,
-			       unsigned mb_id, unsigned sub_mb_id);
-
-signed get_sub_id_4x4_left_up(const decoder_context *decoder, macroblock **mb,
-			      unsigned mb_id, unsigned sub_mb_id);
-
-signed get_sub_id_8x8_left(const decoder_context *decoder, macroblock **mb,
-			   unsigned mb_id, unsigned sub_mb_id);
-
-signed get_sub_id_8x8_up(const decoder_context *decoder, macroblock **mb,
-			 unsigned mb_id, unsigned sub_mb_id);
-
-signed get_sub_id_8x8_up_right(const decoder_context *decoder, macroblock **mb,
-			       unsigned mb_id, unsigned sub_mb_id);
-
-signed get_sub_id_8x8_left_up(const decoder_context *decoder, macroblock **mb,
-			      unsigned mb_id, unsigned sub_mb_id);
-
-#define get_sub_id_2x2_left	get_sub_id_8x8_left
-#define get_sub_id_2x2_up	get_sub_id_8x8_up
-#define get_sub_id_2x2_up_right	get_sub_id_8x8_up_right
-#define get_sub_id_2x2_left_up	get_sub_id_8x8_left_up
-
-const int mb_scan_map(int id);
-
 #endif // SYNTAX_PARSE_H

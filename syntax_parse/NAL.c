@@ -55,14 +55,25 @@ int is_NAL_start_code(bitstream_reader *reader)
 {
 	uint32_t data = bitstream_read_next_word(reader);
 
-	return (be32toh(data) >> 8 == NAL_START_CODE);
+	SYNTAX_DPRINT("NAL offset 0x%X data 0x%08X\n",
+		      reader->data_offset, be32toh(data));
+
+	if (be32toh(data) == NAL_START_CODE) {
+		return 4;
+	}
+
+	if (be32toh(data) >> 8 == NAL_START_CODE) {
+		return 3;
+	}
+
+	return 0;
 }
 
 int seek_to_NAL_start(bitstream_reader *reader)
 {
 	int NAL_found = 0;
 
-	SYNTAX_IPRINT("Searching for the NAL ...\n");
+	SYNTAX_IPRINT("Searching for the NAL ... @0x%X\n", reader->data_offset);
 
 	reader->bit_shift = 0;
 
@@ -73,7 +84,7 @@ int seek_to_NAL_start(bitstream_reader *reader)
 			return 0;
 		}
 
-		bitstream_reader_inc_offset(reader, NAL_found ? 3 : 1);
+		bitstream_reader_inc_offset(reader, NAL_found ?: 1);
 
 		if (NAL_found) {
 			SYNTAX_IPRINT("found NAL_start_code at offset 0x%X\n",
@@ -89,6 +100,7 @@ void parse_NAL(decoder_context *decoder)
 	bitstream_reader *reader = &decoder->reader;
 	unsigned forbidden_zero_bit;
 
+	reader->NAL_offset = reader->data_offset;
 	reader->rbsp_mode = 1;
 
 	forbidden_zero_bit     = bitstream_read_u(reader, 1);
@@ -106,8 +118,9 @@ void parse_NAL(decoder_context *decoder)
 
 	switch (decoder->nal.unit_type) {
 	case 5:
+	case 1:
 		parse_slice_header(decoder);
-		parse_slice_data(decoder);
+		tegra_VDE_decode_frame(decoder);
 		break;
 	case 7:
 		parse_SPS(decoder);

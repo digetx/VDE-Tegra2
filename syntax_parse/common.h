@@ -18,7 +18,6 @@
 #ifndef SYNTAX_COMMON_H
 #define SYNTAX_COMMON_H
 
-#include <assert.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -51,15 +50,10 @@
 // #define SYNTAX_IPRINT(f, ...) {}
 // #define SYNTAX_DPRINT(f, ...) {}
 
-#define min(a, b) ((a < b) ? a : b)
-#define max(a, b) ((a > b) ? a : b)
-
-#define ARRAY_SIZE(x)	(sizeof(x) / sizeof(*(x)))
-
 #define ChromaArrayType()	\
-	(decoder->sps.separate_colour_plane_flag ? 0 : decoder->sps.chroma_format_idc)
+	(sps->separate_colour_plane_flag ? 0 : sps->chroma_format_idc)
 
-#define CABAC_MODE	decoder->pps.entropy_coding_mode_flag
+#define CABAC_MODE	pps->entropy_coding_mode_flag
 
 #ifndef clz
 #define clz	__builtin_clz
@@ -84,33 +78,14 @@ void parse_PPS(decoder_context *decoder);
 
 void parse_slice_header(decoder_context *decoder);
 
-void parse_slice_data(decoder_context *decoder);
-
-signed residual_block_vlc(bitstream_reader *reader, int startIdx, int endIdx,
-			  unsigned maxNumCoeff, signed nC, int16_t res_array[16]);
-
-void macroblock_layer(const decoder_context *decoder, unsigned mb_id);
-
-void macroblock_prediction(const decoder_context *decoder, macroblock *mb,
-			   unsigned mb_id);
-
-void macroblock_prediction_mode_intra_4x4(const decoder_context *decoder,
-					  macroblock *mb, unsigned mb_id);
-
-void residual(const decoder_context *decoder, macroblock *mb, unsigned mb_id,
-	      int startIdx, int endIdx, unsigned CBPLuma, unsigned CBPChroma);
-
 int more_rbsp_data(decoder_context *decoder);
 
 void SPS_vui_parameters(decoder_context *decoder);
 
-void decoder_reset_SPS(decoder_context *decoder);
+void decoder_reset_SPS(decoder_context_sps *sps);
 
-void decoder_reset_PPS(decoder_context *decoder);
+void decoder_reset_PPS(decoder_context_pps *pps);
 
 void decoder_reset_SH(decoder_context *decoder);
-
-void decoder_reset_SD(decoder_context *decoder);
-
 
 #endif // SYNTAX_COMMON_H

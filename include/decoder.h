@@ -18,10 +18,14 @@
 #ifndef DECODER_H
 #define DECODER_H
 
+#include <assert.h>
 #include <stdint.h>
 #include <sys/types.h>
 
 #include "bitstream.h"
+
+#define min(a, b) ((a < b) ? a : b)
+#define max(a, b) ((a > b) ? a : b)
 
 #define P	0
 #define B	1
@@ -33,6 +37,24 @@
 #define I_ONLY	7
 #define SP_ONLY	8
 #define SI_ONLY	9
+
+#define IdrPicFlag	(decoder->nal.unit_type == 5)
+
+#define ARRAY_SIZE(x)	(sizeof(x) / sizeof(*(x)))
+
+#define DECODER_IPRINT(f, ...)	printf(f, ## __VA_ARGS__)
+#define DECODER_DPRINT(f, ...)	printf(f, ## __VA_ARGS__)
+
+// #define DECODER_IPRINT(f, ...) {}
+// #define DECODER_DPRINT(f, ...) {}
+
+#define DECODER_ERR(f, ...)				\
+{							\
+	fprintf(stderr, "%s:%d:\n", __FILE__, __LINE__);\
+	fprintf(stderr, "error! decode: %s: "		\
+		f, __func__, ## __VA_ARGS__);		\
+	abort();					\
+}
 
 typedef struct decoder_context_sps {
 	unsigned valid:1;
@@ -127,7 +149,6 @@ typedef struct pred_weight {
 typedef struct slice_header {
 	uint32_t first_mb_in_slice;
 	uint32_t slice_type;
-	uint32_t pic_parameter_set_id;
 	unsigned colour_plane_id:2;
 	uint32_t frame_num;
 	unsigned field_pic_flag:1;
@@ -157,71 +178,107 @@ typedef struct slice_header {
 	unsigned long_term_reference_flag:1;
 } slice_header;
 
-typedef struct macro_sub_block {
-	uint8_t totalcoeff;
-	int16_t coeffs[16];
-} macro_sub_block;
-
-typedef struct macroblock {
-	uint32_t mb_type;
-
-	unsigned transform_size_8x8_flag:1;
-
-	signed   mb_qp_delta:6;
-
-	unsigned luma_pred_mode[16];
-	macro_sub_block luma_DC;
-	macro_sub_block luma_AC[16];
-
-	unsigned intra_chroma_pred_mode:2;
-	macro_sub_block chroma_DC[2];
-	macro_sub_block chroma_AC[2][4];
-
-	uint8_t luma_decoded[16][16];
-	uint8_t chroma_U_decoded[4][16];
-	uint8_t chroma_V_decoded[4][16];
-} macroblock;
-
-typedef struct slice_data {
-	unsigned cabac_alignment_one_bit:1;
-	uint32_t mb_skip_run;
-	unsigned mb_skip_flag:1;
-	unsigned mb_field_decoding_flag:1;
-	unsigned end_of_slice_flag:1;
-	macroblock *macroblocks;
-} slice_data;
-
 typedef struct nal_header {
 	unsigned ref_idc:2;
 	unsigned unit_type:5;
 } nal_header;
 
+typedef struct frame_data {
+	int frame_dec_num;
+	int frame_num;
+	int frame_idx;
+	int pic_order_cnt;
+	uint32_t paddr;
+	uint32_t aux_data_paddr;
+	unsigned empty:1;
+	unsigned marked_for_removal:1;
+	unsigned is_B_frame:1;
+	unsigned dirty:1;
+	unsigned frame_num_wrap:1;
+	decoder_context_sps *sps;
+} frame_data;
+
+typedef struct frames_list {
+	frame_data *frames[1 + 16];
+	unsigned size;
+} frames_list;
+
 typedef struct decoder_context {
 	bitstream_reader reader;
 
-	void (*frame_decoded_notify)(struct decoder_context*);
+	void (*frame_decoded_notify)(struct decoder_context *decoder,
+				     frame_data *frame);
 	void *opaque;
 
-	uint8_t *decoded_image;
+	decoder_context_sps sps[32];
+	decoder_context_pps pps[256];
 
-	decoder_context_sps sps;
-	decoder_context_pps pps;
+	decoder_context_sps *active_sps;
+	decoder_context_pps *active_pps;
 
 	nal_header   nal;
 	slice_header sh;
-	slice_data   sd;
+
+	frames_list DPB_frames_array;
+	frames_list ref_frames_P_list0;
+	frames_list ref_frames_B_list0;
+	frames_list ref_frames_B_list1;
 
 	int NAL_start_delim;
+	int frames_decoded;
+	int prev_frame_num;
+	int prevPicOrderCntMsb;
+	int prevPicOrderCntLsb;
+	int running;
+
+	uint32_t parse_limit_paddress;
+	uint32_t parse_start_paddress;
+
+	uint32_t iram_lists_paddress;
+	uint32_t iram_unk_paddress;
+
+	time_t dec_time_acc;
 } decoder_context;
 
 void decoder_init(decoder_context *decoder, void *data, uint32_t size);
 
 void decoder_set_notify(decoder_context *decoder,
-			void (*frame_decoded_notify)(struct decoder_context*),
+			void (*frame_decoded_notify)(decoder_context*,
+						     frame_data*),
 			void *opaque);
 
 void decode_current_slice(decoder_context *decoder, unsigned last_mb_id);
 
 size_t decoder_image_frame_size(decoder_context *decoder);
+
+void tegra_VDE_decode_frame(decoder_context *decoder);
+
+void show_frames_list(frame_data **frames, int list_sz, int delim_id);
+
+void clear_DPB(decoder_context *decoder);
+
+int get_frame_id_with_least_pic_order_cnt(frame_data **frames,
+					int list_size, int least_pic_order_cnt,
+					int start_stop_pic_order_cnt, int after);
+
+int get_frame_id_with_most_pic_order_cnt(frame_data **frames,
+					int list_size, int most_pic_order_cnt,
+					int start_stop_pic_order_cnt, int after);
+
+void swap_frames(frame_data **frames, int id1, int id2);
+
+void slide_frames(decoder_context *decoder);
+
+void form_P_frame_ref_list_l0(decoder_context *decoder);
+
+void form_B_frame_ref_list_l0(decoder_context *decoder);
+
+void form_B_frame_ref_list_l1(decoder_context *decoder);
+
+void move_frame(frame_data **frames, int idx, int to_idx);
+
+void purge_unused_ref_frames(decoder_context *decoder);
+
+void * p2v(uint32_t paddr);
 
 #endif // DECODER_H
