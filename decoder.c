@@ -523,6 +523,7 @@ static void tegra_setup_FRAMEID(decoder_context *decoder, frame_data *frame,
 {
 	unsigned pic_width_in_mbs = decoder->active_sps->pic_width_in_mbs_minus1 + 1;
 	unsigned pic_height_in_mbs = decoder->active_sps->pic_height_in_map_units_minus1 + 1;
+	unsigned dont_untile_16x16 = 0;
 
 	DECODER_DPRINT("Setting up FRAMEID %d\n", frameid);
 
@@ -531,7 +532,8 @@ static void tegra_setup_FRAMEID(decoder_context *decoder, frame_data *frame,
 
 	frame->frame_idx = frameid;
 
-	tegra_VDE_write(FRAMEID(0x000 + frameid * 4), frame->Y_paddr >> 8);
+	tegra_VDE_write(FRAMEID(0x000 + frameid * 4),
+			(dont_untile_16x16 << 31) | frame->Y_paddr >> 8);
 	tegra_VDE_write(FRAMEID(0x100 + frameid * 4), frame->U_paddr >> 8);
 	tegra_VDE_write(FRAMEID(0x180 + frameid * 4), frame->V_paddr >> 8);
 	tegra_VDE_write(FRAMEID(0x080 + frameid * 4),
