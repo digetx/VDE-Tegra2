@@ -188,7 +188,9 @@ typedef struct frame_data {
 	int frame_num;
 	int frame_idx;
 	int pic_order_cnt;
-	uint32_t paddr;
+	uint32_t Y_paddr;
+	uint32_t U_paddr;
+	uint32_t V_paddr;
 	uint32_t aux_data_paddr;
 	unsigned empty:1;
 	unsigned marked_for_removal:1;
@@ -249,7 +251,9 @@ void decoder_set_notify(decoder_context *decoder,
 
 void decode_current_slice(decoder_context *decoder, unsigned last_mb_id);
 
-size_t decoder_image_frame_size(decoder_context *decoder);
+unsigned frame_luma_size(decoder_context *decoder);
+
+unsigned frame_chroma_size(decoder_context *decoder);
 
 void tegra_VDE_decode_frame(decoder_context *decoder);
 

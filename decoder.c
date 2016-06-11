@@ -36,8 +36,6 @@
 #define __ALIGN_MASK(x, mask)	(((x) + (mask)) & ~(mask))
 #define ALIGN(x, a)		__ALIGN_MASK(x, (typeof(x))(a) - 1)
 
-#define SWAP(a, b) ({ __auto_type tmp = a; a = b; b = tmp; })
-
 #define TIMEOUT_SEC	3
 
 #define FPS()	(decoder->frames_decoded / max(decoder->dec_time_acc, 1))
@@ -54,6 +52,8 @@
 #define CLK_RST_CONTROLLER_CLK_ENB_H_SET_0	0x328
 #define CLK_RST_CONTROLLER_RST_DEV_H_SET_0	0x308
 #define CLK_RST_CONTROLLER_RST_DEV_H_CLR_0	0x30C
+
+#define CAR_VDE	(1 << 29)
 
 #define ICMDQUE_WR		0x00
 #define CMDQUE_CONTROL		0x08
@@ -94,7 +94,7 @@ static uint32_t irqs_status[4];
 
 static const char nal_start_code[] = { 0x00, 0x00, 0x01 };
 
-static unsigned frame_luma_size(decoder_context *decoder)
+unsigned frame_luma_size(decoder_context *decoder)
 {
 	unsigned pic_width_in_mbs = decoder->active_sps->pic_width_in_mbs_minus1 + 1;
 	unsigned pic_height_in_mbs = decoder->active_sps->pic_height_in_map_units_minus1 + 1;
@@ -105,17 +105,9 @@ static unsigned frame_luma_size(decoder_context *decoder)
 	return img_size;
 }
 
-static unsigned frame_chroma_size(decoder_context *decoder)
+unsigned frame_chroma_size(decoder_context *decoder)
 {
 	return frame_luma_size(decoder) / 4;
-}
-
-size_t decoder_image_frame_size(decoder_context *decoder)
-{
-	unsigned img_luma_size = frame_luma_size(decoder);
-	unsigned img_chroma_size = frame_chroma_size(decoder);
-
-	return img_luma_size + img_chroma_size * 2;
 }
 
 static void map_mem(void **mem_virt, off_t phys_address, off_t size)
@@ -237,6 +229,8 @@ static void handle_IRQ(decoder_context *decoder, int irq_nb)
 	case INT_VDE_SXE:
 		tegra_VDE_set_bits(SXE(0x0C), 0);
 		break;
+	default:
+		abort();
 	}
 out:
 	pthread_mutex_unlock(&decode_mutex);
@@ -356,15 +350,15 @@ static void tegra_VDE_reset(decoder_context *decoder)
 	decoder->running = 0;
 
 	reg_write(CAR_io_mem_virt,
-		  CLK_RST_CONTROLLER_RST_DEV_H_SET_0, 0x20000000);
+		  CLK_RST_CONTROLLER_RST_DEV_H_SET_0, CAR_VDE);
 
 	reg_write(CAR_io_mem_virt,
-		  CLK_RST_CONTROLLER_CLK_ENB_H_SET_0, 0x20000000);
+		  CLK_RST_CONTROLLER_CLK_ENB_H_SET_0, CAR_VDE);
 
 	usleep(1000);
 
 	reg_write(CAR_io_mem_virt,
-		  CLK_RST_CONTROLLER_RST_DEV_H_CLR_0, 0x20000000);
+		  CLK_RST_CONTROLLER_RST_DEV_H_CLR_0, CAR_VDE);
 
 	tegra_VDE_set_bits(SXE(0xF0), 0xA);
 	tegra_VDE_set_bits(BSEV(CMDQUE_CONTROL), 0xA00);
@@ -374,7 +368,6 @@ static void tegra_VDE_reset(decoder_context *decoder)
 	tegra_VDE_set_bits(PPE(0x28), 0xA);
 	tegra_VDE_set_bits(MCE(0x08), 0xA00);
 	tegra_VDE_set_bits(TFE(0x00), 0xA);
-
 	tegra_VDE_set_bits(VDMA(0x04), 0x5);
 	tegra_VDE_write(VDMA(0x1C), 0x00000000);
 	tegra_VDE_write(VDMA(0x00), 0x00000000);
@@ -400,8 +393,6 @@ static void tegra_VDE_init(decoder_context *decoder)
 	map_mem(&ICTLR_io_mem_virt, 0x60004000, 0x340);
 	map_mem(&dram_virt, DRAM_PHYS_BASE, MEM_SZ);
 	map_mem(&iram_virt, IRAM_BASE_ADDR, 0x3FC00);
-
-	memset(dram_virt, 0x55, MEM_SZ);
 
 	tegra_VDE_reset(decoder);
 
@@ -530,12 +521,8 @@ static void tegra_setup_MBE_ref_list(frames_list *list, unsigned pic_order_cnt,
 static void tegra_setup_FRAMEID(decoder_context *decoder, frame_data *frame,
 				int frameid)
 {
-	unsigned baseline_profile = (decoder->active_sps->profile_idc == 16);
 	unsigned pic_width_in_mbs = decoder->active_sps->pic_width_in_mbs_minus1 + 1;
 	unsigned pic_height_in_mbs = decoder->active_sps->pic_height_in_map_units_minus1 + 1;
-	uint32_t decoded_Y_base_addr;
-	uint32_t decoded_U_base_addr;
-	uint32_t decoded_V_base_addr;
 
 	DECODER_DPRINT("Setting up FRAMEID %d\n", frameid);
 
@@ -544,18 +531,11 @@ static void tegra_setup_FRAMEID(decoder_context *decoder, frame_data *frame,
 
 	frame->frame_idx = frameid;
 
-	decoded_Y_base_addr = frame->paddr;
-	decoded_U_base_addr = decoded_Y_base_addr + frame_luma_size(decoder);
-	decoded_V_base_addr = decoded_U_base_addr + frame_chroma_size(decoder);
-
-	tegra_VDE_write(FRAMEID(0x000 + frameid * 4),
-		(baseline_profile << 31) | decoded_Y_base_addr >> 8);
-	tegra_VDE_write(FRAMEID(0x100 + frameid * 4), decoded_U_base_addr >> 8);
-	tegra_VDE_write(FRAMEID(0x180 + frameid * 4), decoded_V_base_addr >> 8);
+	tegra_VDE_write(FRAMEID(0x000 + frameid * 4), frame->Y_paddr >> 8);
+	tegra_VDE_write(FRAMEID(0x100 + frameid * 4), frame->U_paddr >> 8);
+	tegra_VDE_write(FRAMEID(0x180 + frameid * 4), frame->V_paddr >> 8);
 	tegra_VDE_write(FRAMEID(0x080 + frameid * 4),
-			(baseline_profile << 19) |
-			(pic_width_in_mbs << 16) |
-			pic_height_in_mbs);
+			(pic_width_in_mbs << 16) | pic_height_in_mbs);
 
 	tegra_VDE_write(FRAMEID(0x280 + frameid * 4),
 			(((pic_width_in_mbs + 1) >> 1) << 6) | 1);
@@ -636,7 +616,6 @@ static void tegra_VDE_decoder_init_mem(decoder_context *decoder,
 {
 	frame_data **DPB_frames = decoder->DPB_frames_array.frames;
 	unsigned baseline_profile = (decoder->active_sps->profile_idc == 66);
-	unsigned img_sz = decoder_image_frame_size(decoder);
 	int i;
 
 	decoder->parse_start_paddress = reserve_mem_phys(DATA_BUF_SIZE, 1);
@@ -647,7 +626,12 @@ static void tegra_VDE_decoder_init_mem(decoder_context *decoder,
 	       nal_start_code, NAL_START_CODE_SZ);
 
 	for (i = 0; i < ARRAY_SIZE(decoder->DPB_frames_array.frames); i++) {
-		DPB_frames[i]->paddr = reserve_mem_phys(img_sz, 0x400);
+		DPB_frames[i]->Y_paddr = reserve_mem_phys(
+					frame_luma_size(decoder), 0x100);
+		DPB_frames[i]->U_paddr = reserve_mem_phys(
+					frame_chroma_size(decoder), 0x100);
+		DPB_frames[i]->V_paddr = reserve_mem_phys(
+					frame_chroma_size(decoder), 0x100);
 		if (!baseline_profile) {
 			DPB_frames[i]->aux_data_paddr =
 					reserve_mem_phys(total_mbs_nb * 64, 4);
@@ -703,7 +687,7 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 	unsigned is_B_frame = (decoder->sh.slice_type == B);
 	unsigned is_ref_frame = (decoder->nal.ref_idc != 0);
 	uint32_t data_start = reader->NAL_offset;
-	uint32_t data_end, data_size;
+	uint32_t data_end, data_size, SXE_parsed;
 	int i, ret;
 
 	if (decoder->frames_decoded == 0) {
@@ -838,13 +822,13 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 		decoder->frames_decoded++;
 	}
 
-	data_size = tegra_VDE_read(BSEV(0x10)) - decoder->parse_start_paddress;
+	SXE_parsed = tegra_VDE_read(BSEV(0x10)) - decoder->parse_start_paddress;
 
 	DECODER_IPRINT("Decoding %s! Total frames decoded %d, " \
 		       "SXE parsed 0x%X bytes : %d macroblocks,\t" \
 		       "Average ideal FPS %ld\n",
 		       ret ? "failed" : "succeed",
-		       decoder->frames_decoded, data_size,
+		       decoder->frames_decoded, SXE_parsed,
 		       tegra_VDE_read(SXE(0xC8)) & 0x1FFF, FPS());
 
 	if (ret != 0) {
@@ -852,7 +836,7 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 	}
 
 	decoder->frame_decoded_notify(decoder, DPB_frames[0]);
-	reader->data_offset = data_start + data_size - NAL_START_CODE_SZ;
+	reader->data_offset = data_start + SXE_parsed - NAL_START_CODE_SZ;
 
 	purge_unused_ref_frames(decoder);
 

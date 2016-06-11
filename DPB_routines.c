@@ -40,7 +40,7 @@ void show_frames_list(frame_data **frames, int list_sz, int delim_id)
 				"is_B_frame = %d frame_num_wrap = %d " \
 				"pic_order_cnt = %d\n",
 				i,
-				frames[i]->paddr,
+				frames[i]->Y_paddr,
 				frames[i]->frame_num,
 				frames[i]->frame_dec_num,
 				frames[i]->is_B_frame,

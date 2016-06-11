@@ -26,23 +26,22 @@
 #include "decoder.h"
 #include "syntax_parse.h"
 
-static unsigned foff;
-
 static void save_decoded_frame(decoder_context *decoder, frame_data *frame)
 {
-	size_t img_sz = decoder_image_frame_size(decoder);
 	FILE *fp = decoder->opaque;
+	long foff = ftell(fp);
 
-	fwrite(p2v(frame->paddr), 1, img_sz, fp);
+	fwrite(p2v(frame->Y_paddr), 1, frame_luma_size(decoder), fp);
+	fwrite(p2v(frame->U_paddr), 1, frame_chroma_size(decoder), fp);
+	fwrite(p2v(frame->V_paddr), 1, frame_chroma_size(decoder), fp);
 
 	if (ferror(fp) != 0) {
 		perror("Error writing to output file");
 		abort();
 	}
 
-	printf("Saved frame %d file offset 0x%X\n",
+	printf("Saved frame %d file offset 0x%lX\n",
 	       decoder->frames_decoded - 1, foff);
-	foff += img_sz;
 }
 
 int main(int argc, char **argv)
