@@ -195,7 +195,6 @@ typedef struct frame_data {
 	unsigned empty:1;
 	unsigned marked_for_removal:1;
 	unsigned is_B_frame:1;
-	unsigned dirty:1;
 	unsigned frame_num_wrap:1;
 	decoder_context_sps *sps;
 } frame_data;

@@ -260,7 +260,6 @@ void parse_slice_header(decoder_context *decoder)
 	DPB_frames[0]->is_B_frame = (slice_type == B); // Not B_ONLY!
 	DPB_frames[0]->sps = sps;
 	DPB_frames[0]->empty = 0;
-	DPB_frames[0]->dirty = 1;
 
 	DECODER_DPRINT("DPB:\n");
 	show_frames_list(DPB_frames,

@@ -123,7 +123,7 @@ static void map_mem(void **mem_virt, off_t phys_address, off_t size)
 
 	PageOffset  = phys_address % getpagesize();
 	PageAddress = phys_address - PageOffset;
-	PagesSize   = ((size / getpagesize()) + 1) * getpagesize();
+	PagesSize   = (((size - 1) / getpagesize()) + 1) * getpagesize();
 
 	*mem_virt = mmap(NULL, PagesSize, PROT_READ | PROT_WRITE,
 			 MAP_SHARED, mem_dev, PageAddress);
@@ -361,7 +361,7 @@ static void tegra_VDE_reset(decoder_context *decoder)
 		  CLK_RST_CONTROLLER_RST_DEV_H_CLR_0, CAR_VDE);
 
 	tegra_VDE_set_bits(SXE(0xF0), 0xA);
-	tegra_VDE_set_bits(BSEV(CMDQUE_CONTROL), 0xA00);
+	tegra_VDE_set_bits(BSEV(CMDQUE_CONTROL), 0xB);
 	tegra_VDE_set_bits(MBE(0x50), 0x8002);
 	tegra_VDE_set_bits(MBE(0xA0), 0xA);
 	tegra_VDE_set_bits(PPE(0x14), 0xA);
@@ -381,6 +381,7 @@ static void tegra_VDE_reset(decoder_context *decoder)
 	tegra_VDE_write(SXE(0x5C), 0x00000E34);
 	tegra_VDE_write(MCE(0x10), 0x063C063C);
 	tegra_VDE_write(BSEV(INTR_STATUS), 0x0003FC00);
+	tegra_VDE_write(BSEV(BSE_CONFIG), 0x0000150D);
 	tegra_VDE_write(BSEV(0x40), 0x00000100);
 	tegra_VDE_write(BSEV(0x98), 0x00000000);
 	tegra_VDE_write(BSEV(0x9C), 0x00000060);
@@ -546,7 +547,7 @@ static void tegra_setup_FRAMEID(decoder_context *decoder, frame_data *frame,
 static void tegra_VDE_MBE_set_0xA_reg(int reg, uint32_t val)
 {
 	tegra_VDE_write(MBE(0x80),
-			0xA0000000 | ((reg) << 24) | (val & 0xFFFF));
+			0xA0000000 | (reg << 24) | (val & 0xFFFF));
 
 	tegra_VDE_write(MBE(0x80),
 			0xA0000000 | ((reg + 1) << 24) | (val >> 16));
@@ -621,7 +622,7 @@ static void tegra_VDE_decoder_init_mem(decoder_context *decoder,
 	int i;
 
 	decoder->parse_start_paddress = reserve_mem_phys(DATA_BUF_SIZE, 1);
-	decoder->parse_limit_paddress = reserve_mem_phys(0x0, 0x400);
+	decoder->parse_limit_paddress = reserve_mem_phys(0x0, 0x20);
 
 	// Prepend NAL_START_CODE to the syntax data
 	memcpy(p2v(decoder->parse_start_paddress),
@@ -690,6 +691,7 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 	unsigned is_ref_frame = (decoder->nal.ref_idc != 0);
 	uint32_t data_start = reader->NAL_offset;
 	uint32_t data_end, data_size, SXE_parsed;
+	uint32_t macroblocks_parsed;
 	int i, ret;
 
 	if (decoder->frames_decoded == 0) {
@@ -716,14 +718,9 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 	tegra_VDE_setup_IRAM_lists(decoder);
 
 	tegra_VDE_write(BSEV(0x8C), 0x00000000);
-	tegra_VDE_write(BSEV(CMDQUE_CONTROL),
-			tegra_VDE_read(BSEV(CMDQUE_CONTROL)) | 0xF);
-	tegra_VDE_write(BSEV(BSE_CONFIG),
-			(tegra_VDE_read(BSEV(BSE_CONFIG)) & ~0x1F) | 0xB);
 	tegra_VDE_write(BSEV(0x54), decoder->parse_limit_paddress);
 	tegra_VDE_write(BSEV(0x88),
-			(pic_width_in_mbs  << 11) |
-			(pic_height_in_mbs << 3));
+			(pic_width_in_mbs << 11) | (pic_height_in_mbs << 3));
 
 	tegra_VDE_BSEV_push_ICMDQUEUE(decoder, 0x800003FC);
 	tegra_VDE_BSEV_push_ICMDQUEUE(decoder, 0x01500000 |
@@ -754,7 +751,7 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 			(decoder->sh.num_ref_idx_l0_active_minus1 << 5) |
 			(decoder->active_pps->chroma_qp_index_offset & 0x1F));
 	tegra_VDE_write(SXE(0x4C), 0x0C000000 | (is_B_frame << 24));
-	tegra_VDE_write(SXE(0x68), (0x7 << 23) | data_size);
+	tegra_VDE_write(SXE(0x68), 0x03800000 | data_size);
 	tegra_VDE_write(SXE(0x6C), decoder->parse_start_paddress);
 
 	tegra_VDE_write(MBE(0x80),
@@ -825,20 +822,20 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 	}
 
 	SXE_parsed = tegra_VDE_read(BSEV(0x10)) - decoder->parse_start_paddress;
+	macroblocks_parsed = tegra_VDE_read(SXE(0xC8)) & 0x1FFF;
 
 	DECODER_IPRINT("Decoding %s! Total frames decoded %d, " \
 		       "SXE parsed 0x%X bytes : %d macroblocks,\t" \
 		       "Average ideal FPS %ld\n",
 		       ret ? "failed" : "succeed",
 		       decoder->frames_decoded, SXE_parsed,
-		       tegra_VDE_read(SXE(0xC8)) & 0x1FFF, FPS());
+		       macroblocks_parsed, FPS());
 
 	if (ret != 0) {
 		tegra_VDE_stuck(decoder);
 	}
 
 	decoder->frame_decoded_notify(decoder, DPB_frames[0]);
-	reader->data_offset = data_start + SXE_parsed - NAL_START_CODE_SZ;
 
 	purge_unused_ref_frames(decoder);
 
@@ -847,6 +844,8 @@ void tegra_VDE_decode_frame(decoder_context *decoder)
 	} else {
 		DECODER_DPRINT("DPB: NOT sliding frames\n");
 	}
+
+	reader->data_offset = data_start + SXE_parsed - NAL_START_CODE_SZ;
 }
 
 void decoder_init(decoder_context *decoder, void *data, uint32_t size)
